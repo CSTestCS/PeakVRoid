@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Unity-free sanity check of the VRM/glTF parser: run with: dotnet run (then the .vrm paths) -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../src/PeakVRoid/Vrm/Json.cs" Link="Json.cs" />
+    <Compile Include="../../src/PeakVRoid/Vrm/GltfDocument.cs" Link="GltfDocument.cs" />
+  </ItemGroup>
+</Project>

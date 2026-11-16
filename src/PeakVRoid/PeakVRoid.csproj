@@ -1,0 +1,63 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    PeakVRoid builds WITHOUT the game installed: it only references BepInEx and the
+    stock UnityEngine modules from NuGet. Everything game-specific is reached at
+    runtime through reflection (see Game/Peak.cs), so CI can build releases too.
+  -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <AssemblyName>PeakVRoid</AssemblyName>
+    <RootNamespace>PeakVRoid</RootNamespace>
+    <Version>1.0.0</Version>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <BepInExPluginGuid>com.peakvroid.peakvroid</BepInExPluginGuid>
+    <BepInExPluginName>PeakVRoid</BepInExPluginName>
+    <DebugType>embedded</DebugType>
+    <RestoreAdditionalProjectSources>https://nuget.bepinex.dev/v3/index.json</RestoreAdditionalProjectSources>
+    <!-- Set PeakDir (or the PEAK_DIR env var) to copy the built DLL into your game for testing. -->
+    <PeakDir Condition="'$(PeakDir)' == ''">$(PEAK_DIR)</PeakDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BepInEx.Analyzers" Version="1.0.8" PrivateAssets="all" />
+    <PackageReference Include="BepInEx.Core" Version="5.4.21" PrivateAssets="all" />
+    <PackageReference Include="BepInEx.PluginInfoProps" Version="2.1.0" PrivateAssets="all" />
+    <PackageReference Include="UnityEngine.Modules" Version="6000.0.36" IncludeAssets="compile" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!-- dotnet build -c Release -t:Package  →  dist/PeakVRoid-thunderstore-<ver>.zip and dist/PeakVRoid-manual-<ver>.zip -->
+  <Target Name="Package" DependsOnTargets="Build">
+    <PropertyGroup>
+      <RepoRoot>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../..'))</RepoRoot>
+      <Dist>$(RepoRoot)/dist</Dist>
+      <TsStage>$(Dist)/stage/thunderstore</TsStage>
+      <ManualStage>$(Dist)/stage/manual</ManualStage>
+      <ManifestText>$([System.IO.File]::ReadAllText('$(RepoRoot)/thunderstore/manifest.json'))</ManifestText>
+    </PropertyGroup>
+    <Error Condition="!$(ManifestText.Contains('&quot;version_number&quot;: &quot;$(Version)&quot;'))"
+           Text="thunderstore/manifest.json version_number does not match the project Version ($(Version))." />
+    <RemoveDir Directories="$(Dist)/stage" />
+    <ItemGroup>
+      <TsFiles Include="$(RepoRoot)/thunderstore/manifest.json;$(RepoRoot)/thunderstore/icon.png;$(RepoRoot)/thunderstore/README.md;$(RepoRoot)/thunderstore/CHANGELOG.md" />
+      <ManualFiles Include="$(RepoRoot)/install/*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(TsFiles)" DestinationFolder="$(TsStage)" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(TsStage)/plugins/PeakVRoid" />
+    <Copy SourceFiles="@(ManualFiles)" DestinationFolder="$(ManualStage)" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ManualStage)/BepInEx/plugins/PeakVRoid" />
+    <Copy SourceFiles="$(RepoRoot)/thunderstore/README.md" DestinationFiles="$(ManualStage)/README.md" />
+    <Delete Files="$(Dist)/PeakVRoid-thunderstore-$(Version).zip;$(Dist)/PeakVRoid-manual-$(Version).zip" />
+    <ZipDirectory SourceDirectory="$(TsStage)" DestinationFile="$(Dist)/PeakVRoid-thunderstore-$(Version).zip" />
+    <ZipDirectory SourceDirectory="$(ManualStage)" DestinationFile="$(Dist)/PeakVRoid-manual-$(Version).zip" />
+    <Message Importance="high" Text="Packages written to $(Dist)" />
+  </Target>
+
+  <Target Name="CopyToGame" AfterTargets="Build" Condition="'$(PeakDir)' != '' And Exists('$(PeakDir)/BepInEx/plugins')">
+    <MakeDir Directories="$(PeakDir)/BepInEx/plugins/PeakVRoid" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(PeakDir)/BepInEx/plugins/PeakVRoid" />
+    <Message Importance="high" Text="PeakVRoid copied to $(PeakDir)/BepInEx/plugins/PeakVRoid" />
+  </Target>
+</Project>
