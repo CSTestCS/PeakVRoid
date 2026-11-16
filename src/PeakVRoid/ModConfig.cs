@@ -13,8 +13,23 @@ namespace PeakVRoid
         Original,
     }
 
+    public enum ArmMode
+    {
+        /// <summary>Hands land exactly on the scout's hands (held items and climbing grips line up).</summary>
+        ReachScoutHands,
+        /// <summary>Hands keep the scout's hand offset from the avatar's own shoulders: arms closer to the body.</summary>
+        MatchShoulders,
+        /// <summary>No arm IK: arms just copy the scout's arm rotations.</summary>
+        CopyRotation,
+    }
+
     public static class ModConfig
     {
+        public static ConfigEntry<ArmMode> Arms;
+        public static ConfigEntry<bool> ShowBackpack;
+        public static ConfigEntry<float> BackpackDistance;
+        public static ConfigEntry<float> BackpackHeight;
+
         // Avatar
         public static ConfigEntry<bool> AvatarEnabled;
         public static ConfigEntry<string> AvatarFile;
@@ -73,6 +88,17 @@ namespace PeakVRoid
             LimbIK = c.Bind("Avatar", "LimbIK", true,
                 "Bend the avatar's arms and legs so its hands and feet land exactly on the scout's (held items, climbing grips, " +
                 "feet on the ground). Also fixes A-pose/T-pose differences.");
+            Arms = c.Bind("Avatar", "ArmMode", ArmMode.ReachScoutHands,
+                "How the avatar's arms follow the scout (can be changed while playing). " +
+                "ReachScoutHands = hands exactly on the scout's hands, so items and grips line up (arms stick out more); " +
+                "MatchShoulders = arms closer to the body, items slightly off the hands; " +
+                "CopyRotation = no arm IK, arms only copy the scout's arm angles.");
+            ShowBackpack = c.Bind("Avatar", "ShowBackpack", true,
+                "Show the backpack you're wearing on your avatar's back.");
+            BackpackDistance = c.Bind("Avatar", "BackpackDistance", 1f,
+                new ConfigDescription("Move the backpack closer to (<1) or farther from (>1) the avatar's back.", new AcceptableValueRange<float>(0f, 3f)));
+            BackpackHeight = c.Bind("Avatar", "BackpackHeight", 0f,
+                new ConfigDescription("Raise (+) or lower (-) the backpack on the avatar's back, in metres.", new AcceptableValueRange<float>(-1f, 1f)));
             Fingers = c.Bind("Avatar", "Fingers", true, "Copy finger curls from the scout to the avatar.");
             SpringBones = c.Bind("Avatar", "SpringBones", true, "Simulate VRM hair/clothes physics.");
             AutoBlink = c.Bind("Avatar", "AutoBlink", true, "Blink automatically using the VRM's blink expression.");

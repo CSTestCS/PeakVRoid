@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.3
+- New `[Avatar] ArmMode`: `ReachScoutHands` (default), `MatchShoulders` (arms closer to the body) or `CopyRotation` (no arm IK). Can be changed while playing.
+- The backpack you wear is now shown on the avatar's back, and your own backpack is visible in third person.
+  Tune with `ShowBackpack`, `BackpackDistance`, `BackpackHeight`.
+
 ## 1.0.2
 - Avatars are now scaled (uniformly) to exactly the default scout's full height, measured feet to top of head.
 - Knees bend forward instead of bowing outward; feet are placed under the avatar's own hips instead of the scout's wide stance.

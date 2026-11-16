@@ -27,6 +27,8 @@ namespace PeakVRoid
             root.hideFlags = HideFlags.HideAndDontSave;
 
             Peak.Init();
+            try { BackpackPatch.Apply(new HarmonyLib.Harmony(MyPluginInfo.PLUGIN_GUID)); }
+            catch (System.Exception e) { Log.LogWarning("Backpack patch failed: " + e.Message); }
             avatars = new AvatarManager(root.transform);
             ThirdPersonCamera.Init();
 

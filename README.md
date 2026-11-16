@@ -46,6 +46,8 @@ Everything is configurable in `BepInEx/config/com.peakvroid.peakvroid.cfg`:
 | Avatar | `File` | *(first .vrm)* | File name in the avatar folder, or a full path |
 | Avatar | `ScaleMode` | `MatchHeight` | `MatchHeight`, `MatchLegs` or `Original` |
 | Avatar | `ScaleMultiplier`, `HeightOffset` | 1, 0 | Fine-tune size and floor contact |
+| Avatar | `ArmMode` | `ReachScoutHands` | `ReachScoutHands` (hands on items/grips), `MatchShoulders` (arms closer to the body), `CopyRotation` (no arm IK) |
+| Avatar | `ShowBackpack`, `BackpackDistance`, `BackpackHeight` | on, 1, 0 | Worn backpack on the avatar's back (also shows your own backpack in third person) |
 | Avatar | `LimbIK`, `Fingers`, `SpringBones`, `AutoBlink`, `HideHeadInFirstPerson` | on | |
 | Avatar | `OtherPlayersAvatars` / `UseMyAvatarForEveryone` | on / off | Local-only avatars for other players |
 | Materials | `Unlit`, `ShadeLift`, `ShaderOverride` | off, 0.15, — | How MToon is approximated |

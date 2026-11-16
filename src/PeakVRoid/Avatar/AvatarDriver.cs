@@ -49,6 +49,7 @@ namespace PeakVRoid.Avatar
             public Transform GameEnd;
             public bool IsLower;
             public bool IsLeg;
+            public bool IsArm;
             public Vector3 Target;
         }
 
@@ -79,6 +80,17 @@ namespace PeakVRoid.Avatar
         private bool resetSprings = true;
         private float nextScoutRefresh;
         private bool visible = true;
+
+        // Backpack: the scout's worn-backpack visuals, moved onto the avatar's back while rendering.
+        private readonly List<Transform> backpackRoots = new List<Transform>();
+        private readonly List<Vector3> backpackSaved = new List<Vector3>();
+        private Transform scoutTorso, scoutArmL, scoutArmR;
+        private Transform vrmBack, vrmArmL, vrmArmR;
+        private bool backpackMoved;
+        private float nextBackpackScan;
+
+        private static readonly HashSet<AvatarDriver> Live = new HashSet<AvatarDriver>();
+        private static bool renderHooked;
 
         public bool Ready { get; private set; }
 
@@ -230,6 +242,7 @@ namespace PeakVRoid.Avatar
                     if (!parts.TryGetValue(gl, out var gmid) || !parts.TryGetValue(ge, out var gend)) continue;
                     up.Lower = low;
                     up.IsLeg = vu.EndsWith("UpperLeg");
+                    up.IsArm = low.IsArm = vu.EndsWith("UpperArm");
                     up.VrmEnd = V(ve);
                     up.GameMid = gmid;
                     up.GameEnd = gend;
@@ -249,6 +262,16 @@ namespace PeakVRoid.Avatar
 
             springs = new SpringBones(Model, t);
             blinker = new Blinker(Model, t);
+
+            parts.TryGetValue("Torso", out scoutTorso);
+            parts.TryGetValue("Arm_L", out scoutArmL);
+            parts.TryGetValue("Arm_R", out scoutArmR);
+            vrmBack = V("upperChest") ?? V("chest") ?? V("spine");
+            vrmArmL = V("leftUpperArm");
+            vrmArmR = V("rightUpperArm");
+            FindBackpack(true);
+            Live.Add(this);
+            HookRendering();
 
             transform.localScale = Vector3.one * scale;
             gameObject.SetActive(true);
@@ -353,6 +376,7 @@ namespace PeakVRoid.Avatar
                 resetSprings = true;
             }
 
+            if (Time.unscaledTime >= nextBackpackScan) FindBackpack(false);
             HideScout(true);
             Apply();
         }
@@ -372,12 +396,14 @@ namespace PeakVRoid.Avatar
             transform.position = hipsPos - transform.rotation * (hipsRestInRoot * scale);
 
             hipsMap.Vrm.position = hipsPos;
+            bool armIK = ModConfig.Arms.Value != ArmMode.CopyRotation;
             for (int i = 0; i < maps.Count; i++)
             {
                 var m = maps[i];
                 if (m.Game == null) continue;
                 // Copy the scout's rotation (this also carries the twist of limbs).
                 m.Vrm.rotation = m.Game.rotation * m.Offset;
+                if (m.IsArm && !armIK) continue;
                 if (m.Lower != null && m.GameEnd != null) SolveLimb(m);
                 else if (m.IsLower) Aim(m.Vrm, m.VrmEnd, m.Target);
             }
@@ -412,6 +438,12 @@ namespace PeakVRoid.Avatar
                 // Put the foot under the avatar's own hip joint rather than the scout's (much wider) one,
                 // keeping the scout's foot height so it still stands on the ground.
                 target += Vector3.ProjectOnPlane(a - up.Game.position, bodyUp);
+            }
+            else if (up.IsArm && ModConfig.Arms.Value == ArmMode.MatchShoulders)
+            {
+                // Keep the hand where the scout's is relative to its shoulder, measured from the avatar's own
+                // (narrower) shoulder: arms hang closer to the body, held items sit slightly off the hand.
+                target += a - up.Game.position;
             }
             float l1 = (low.Vrm.position - a).magnitude;
             float l2 = (up.VrmEnd.position - low.Vrm.position).magnitude;
@@ -461,14 +493,142 @@ namespace PeakVRoid.Avatar
                 scoutRenderers = Peak.ScoutRenderers(Character);
             }
             foreach (var r in scoutRenderers)
-                if (r != null && r.forceRenderingOff != hide && !IsOwn(r)) r.forceRenderingOff = hide;
+            {
+                if (r == null || IsOwn(r)) continue;
+                bool h = hide && !IsBackpack(r.transform);
+                if (r.forceRenderingOff != h) r.forceRenderingOff = h;
+            }
         }
 
         private bool IsOwn(Renderer r) => r.transform.IsChildOf(transform);
 
+        private bool IsBackpack(Transform tr)
+        {
+            if (!ModConfig.ShowBackpack.Value) return false;
+            foreach (var b in backpackRoots)
+                if (b != null && tr.IsChildOf(b)) return true;
+            return false;
+        }
+
         private void OnDestroy()
         {
+            RestoreBackpack();
+            Live.Remove(this);
             if (Character != null) HideScout(false);
+        }
+
+        // ------------------------------------------------------------------ backpack
+
+        /// <summary>
+        /// Finds the visuals of the backpack the scout wears: whatever hangs under the character's
+        /// backpack anchor (refs.backpackTransform), plus renderer objects under the character whose
+        /// name mentions a backpack. Rescanned every couple of seconds as backpacks are put on and taken off.
+        /// </summary>
+        private void FindBackpack(bool log)
+        {
+            nextBackpackScan = Time.unscaledTime + 2f;
+            backpackRoots.Clear();
+            // PEAK keeps the worn backpack in CharacterBackpackHandler.backpack (MeshRenderers under the character).
+            var worn = BackpackPatch.BackpackOf(Character);
+            if (worn != null && worn.transform != Character.transform && !scoutMain.transform.IsChildOf(worn.transform))
+            {
+                backpackRoots.Add(worn.transform);
+                if (log) Plugin.Log.LogInfo($"Backpack: {worn.name} ({worn.GetComponentsInChildren<Renderer>(true).Length} renderers)");
+                return;
+            }
+            var anchor = Peak.Get(Peak.Refs(Character), "backpackTransform") as Transform;
+            bool anchorUsable = anchor != null && anchor != scoutTorso && anchor != Character.transform &&
+                                !scoutMain.transform.IsChildOf(anchor);
+            if (anchorUsable && anchor.GetComponentsInChildren<Renderer>(true).Length > 0) backpackRoots.Add(anchor);
+
+            foreach (var r in Character.GetComponentsInChildren<Renderer>(true))
+            {
+                if (r == scoutMain || IsUnder(r.transform, backpackRoots)) continue;
+                var named = FindNamedAncestor(r.transform, "backpack");
+                if (named != null && named != Character.transform && !scoutMain.transform.IsChildOf(named) && !backpackRoots.Contains(named))
+                    backpackRoots.Add(named);
+            }
+            if (log)
+            {
+                var names = backpackRoots.ConvertAll(b => b.name + " (" + b.GetComponentsInChildren<Renderer>(true).Length + " renderers)");
+                Plugin.Log.LogInfo($"Backpack anchor: {(anchor != null ? anchor.name : "none")}; visuals: " +
+                                   (names.Count > 0 ? string.Join(", ", names) : "none yet"));
+            }
+        }
+
+        private Transform FindNamedAncestor(Transform tr, string word)
+        {
+            for (var x = tr; x != null && x != Character.transform; x = x.parent)
+                if (x.name.IndexOf(word, System.StringComparison.OrdinalIgnoreCase) >= 0) return x;
+            return null;
+        }
+
+        private static bool IsUnder(Transform tr, List<Transform> roots)
+        {
+            foreach (var r in roots) if (r != null && tr.IsChildOf(r)) return true;
+            return false;
+        }
+
+        /// <summary>
+        /// Moves the backpack from the scout's (much wider) back onto the avatar's back for the duration of a
+        /// camera render. The game's own transforms are put back right after, so physics and game logic
+        /// never see the change.
+        /// </summary>
+        private void MoveBackpack()
+        {
+            if (backpackMoved || !Ready || !visible || !ModConfig.ShowBackpack.Value) return;
+            if (backpackRoots.Count == 0 || scoutTorso == null || vrmBack == null) return;
+
+            // How much slimmer the avatar's torso is than the scout's.
+            float k = 0.6f;
+            if (scoutArmL != null && scoutArmR != null && vrmArmL != null && vrmArmR != null)
+            {
+                float sw = (scoutArmL.position - scoutArmR.position).magnitude;
+                float vw = (vrmArmL.position - vrmArmR.position).magnitude;
+                if (sw > 1e-3f) k = Mathf.Clamp(vw / sw, 0.2f, 1.5f);
+            }
+            k *= ModConfig.BackpackDistance.Value;
+
+            backpackSaved.Clear();
+            foreach (var b in backpackRoots)
+            {
+                if (b == null) { backpackSaved.Add(Vector3.zero); continue; }
+                backpackSaved.Add(b.position);
+                Vector3 rel = b.position - scoutTorso.position;
+                Vector3 vertical = Vector3.Project(rel, bodyUp);
+                Vector3 horizontal = rel - vertical;
+                b.position = vrmBack.position + horizontal * k + vertical + bodyUp * ModConfig.BackpackHeight.Value;
+            }
+            backpackMoved = true;
+        }
+
+        private void RestoreBackpack()
+        {
+            if (!backpackMoved) return;
+            for (int i = 0; i < backpackRoots.Count && i < backpackSaved.Count; i++)
+                if (backpackRoots[i] != null) backpackRoots[i].position = backpackSaved[i];
+            backpackMoved = false;
+        }
+
+        private static void HookRendering()
+        {
+            if (renderHooked) return;
+            renderHooked = true;
+            UnityEngine.Rendering.RenderPipelineManager.beginCameraRendering += (ctx, cam) => BeginRender(cam);
+            UnityEngine.Rendering.RenderPipelineManager.endCameraRendering += (ctx, cam) => EndRender();
+            Camera.onPreCull += BeginRender;
+            Camera.onPostRender += cam => EndRender();
+        }
+
+        private static void BeginRender(Camera cam)
+        {
+            if (cam == null || cam.cameraType != CameraType.Game) return;
+            foreach (var d in Live) if (d != null) d.MoveBackpack();
+        }
+
+        private static void EndRender()
+        {
+            foreach (var d in Live) if (d != null) d.RestoreBackpack();
         }
     }
 }
