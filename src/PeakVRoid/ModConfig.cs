@@ -5,7 +5,7 @@ namespace PeakVRoid
 {
     public enum ScaleMode
     {
-        /// <summary>Same height as the scout; hips are raised so the feet still touch the ground.</summary>
+        /// <summary>Same overall height (feet to top of head) as the scout, uniformly scaled; feet stay on the ground.</summary>
         MatchHeight,
         /// <summary>Legs as long as the scout's (the avatar ends up smaller).</summary>
         MatchLegs,
@@ -59,7 +59,7 @@ namespace PeakVRoid
                 "VRM to use. A file name inside the avatar folder (BepInEx/config/PeakVRoid), or a full path. " +
                 "Leave empty to use the first .vrm in the avatar folder. The Next Avatar key cycles through the folder.");
             Scale = c.Bind("Avatar", "ScaleMode", ScaleMode.MatchHeight,
-                "How the avatar is sized against the scout. MatchHeight = as tall as the scout (recommended), " +
+                "How the avatar is sized against the scout. MatchHeight = exactly as tall as the default scout, proportions unchanged (recommended), " +
                 "MatchLegs = legs as long as the scout's (smaller avatar), Original = the VRM's real size.");
             AvatarScale = c.Bind("Avatar", "ScaleMultiplier", 1f,
                 new ConfigDescription("Extra size multiplier applied after ScaleMode.", new AcceptableValueRange<float>(0.1f, 5f)));

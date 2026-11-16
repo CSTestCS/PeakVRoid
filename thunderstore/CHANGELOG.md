@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.2
+- Avatars are now scaled (uniformly) to exactly the default scout's full height, measured feet to top of head.
+- Knees bend forward instead of bowing outward; feet are placed under the avatar's own hips instead of the scout's wide stance.
+
 ## 1.0.1
 - Installer: no longer crashes when Steam lists a library on a drive that doesn't exist anymore.
 

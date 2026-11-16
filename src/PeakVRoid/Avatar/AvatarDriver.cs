@@ -48,6 +48,7 @@ namespace PeakVRoid.Avatar
             public Transform GameMid;
             public Transform GameEnd;
             public bool IsLower;
+            public bool IsLeg;
             public Vector3 Target;
         }
 
@@ -65,6 +66,8 @@ namespace PeakVRoid.Avatar
         private Vector3 hipsRestInRoot;
         private Quaternion rootOffset; // smr rotation → VRM root rotation
         private Vector3 gameUpInHip;
+        private Vector3 vrmForwardInHips = Vector3.forward;
+        private Vector3 bodyUp = Vector3.up;
         private SkinnedMeshRenderer scoutMain;
         private List<Renderer> scoutRenderers = new List<Renderer>();
         private readonly List<Renderer> thirdPersonOnly = new List<Renderer>();
@@ -166,10 +169,15 @@ namespace PeakVRoid.Avatar
             float gameScale = scoutMain.transform.lossyScale.y;
             Vector3 gUpN = gUp.normalized;
             float gameLeg = FootDrop(parts, gHipRestPos, gUpN, GPos) * gameScale;
-            float gameHeight = parts.ContainsKey("Head") ? (Vector3.Dot(GPos("Head") - gHipRestPos, gUpN)) * gameScale + gameLeg : gameLeg * 2f;
+            // Full visible height (soles to top of head) of both characters, measured from their meshes in the rest pose.
+            float gameHeight = ScoutHeight(gUpN) * gameScale;
+            if (gameHeight < 0.05f)
+                gameHeight = parts.ContainsKey("Head") ? Vector3.Dot(GPos("Head") - gHipRestPos, gUpN) * gameScale + gameLeg : gameLeg * 2f;
             Vector3 vUpN = vUp.normalized;
             float vrmLeg = VrmFootDrop(V, VPos, VPos(vHips), vUpN);
-            float vrmHeight = vHead != null ? Vector3.Dot(VPos(vHead) - VPos(vHips), vUpN) + vrmLeg : vrmLeg * 2f;
+            float vrmHeight = VrmHeight(vUpN);
+            if (vrmHeight < 0.05f)
+                vrmHeight = vHead != null ? Vector3.Dot(VPos(vHead) - VPos(vHips), vUpN) + vrmLeg : vrmLeg * 2f;
             switch (ModConfig.Scale.Value)
             {
                 case ScaleMode.MatchLegs: scale = vrmLeg > 0.01f && gameLeg > 0.01f ? gameLeg / vrmLeg : 1f; break;
@@ -209,6 +217,8 @@ namespace PeakVRoid.Avatar
             }
             GameRest(hipsMap.Game, out var hipRest, out _);
             gameUpInHip = Quaternion.Inverse(hipRest) * gUpN;
+            // The avatar's forward direction expressed in its hips bone, used to bend knees forward.
+            vrmForwardInHips = Quaternion.Inverse(vInv * vHips.rotation) * (fv * Vector3.forward);
 
             if (ModConfig.LimbIK.Value)
             {
@@ -219,6 +229,7 @@ namespace PeakVRoid.Avatar
                     if (up == null || low == null || V(ve) == null) continue;
                     if (!parts.TryGetValue(gl, out var gmid) || !parts.TryGetValue(ge, out var gend)) continue;
                     up.Lower = low;
+                    up.IsLeg = vu.EndsWith("UpperLeg");
                     up.VrmEnd = V(ve);
                     up.GameMid = gmid;
                     up.GameEnd = gend;
@@ -243,8 +254,57 @@ namespace PeakVRoid.Avatar
             gameObject.SetActive(true);
             Ready = true;
             Plugin.Log.LogInfo($"Avatar '{Model.Title}' attached to {Peak.CharacterName(Character)}: {maps.Count} bones, " +
-                               $"{springs.Count} spring joints, scale {scale:0.00} (scout legs {gameLeg:0.00} m, VRM legs {vrmLeg:0.00} m)");
+                               $"{springs.Count} spring joints, scale {scale:0.00} (scout {gameHeight:0.00} m tall, VRM {vrmHeight:0.00} m tall)");
             Apply();
+        }
+
+        /// <summary>Height of the scout's body mesh along its up axis, in mesh units (bind pose).</summary>
+        private float ScoutHeight(Vector3 up)
+        {
+            var mesh = scoutMain.sharedMesh;
+            if (mesh == null) return 0f;
+            return Extent(mesh.bounds, up, Matrix4x4.identity, out _, out _);
+        }
+
+        /// <summary>Height of the VRM's meshes along its up axis, in model units (rest pose).</summary>
+        private float VrmHeight(Vector3 up)
+        {
+            float lo = float.MaxValue, hi = float.MinValue;
+            var toRoot = transform.worldToLocalMatrix;
+            foreach (var r in ownRenderers)
+            {
+                Mesh mesh = null;
+                Matrix4x4 m;
+                if (r is SkinnedMeshRenderer smr)
+                {
+                    mesh = smr.sharedMesh;
+                    // Skinned glTF vertices are already in model space; unskinned ones follow their node.
+                    m = smr.bones != null && smr.bones.Length > 0 ? Matrix4x4.identity : toRoot * r.transform.localToWorldMatrix;
+                }
+                else
+                {
+                    if (r.TryGetComponent<MeshFilter>(out var mf)) mesh = mf.sharedMesh;
+                    m = toRoot * r.transform.localToWorldMatrix;
+                }
+                if (mesh == null || mesh.vertexCount == 0) continue;
+                Extent(mesh.bounds, up, m, out float a, out float b);
+                lo = Mathf.Min(lo, a);
+                hi = Mathf.Max(hi, b);
+            }
+            return hi > lo ? hi - lo : 0f;
+        }
+
+        private static float Extent(Bounds b, Vector3 up, Matrix4x4 m, out float lo, out float hi)
+        {
+            lo = float.MaxValue; hi = float.MinValue;
+            for (int i = 0; i < 8; i++)
+            {
+                var c = b.center + Vector3.Scale(b.extents, new Vector3((i & 1) == 0 ? -1 : 1, (i & 2) == 0 ? -1 : 1, (i & 4) == 0 ? -1 : 1));
+                float d = Vector3.Dot(m.MultiplyPoint3x4(c), up);
+                lo = Mathf.Min(lo, d);
+                hi = Mathf.Max(hi, d);
+            }
+            return hi - lo;
         }
 
         private static Quaternion Frame(Vector3 right, Vector3 up)
@@ -307,6 +367,7 @@ namespace PeakVRoid.Avatar
 
             // Hips position: scout hip, shifted along the body's up so feet line up.
             Vector3 up = hipsMap.Game.rotation * gameUpInHip;
+            bodyUp = up;
             Vector3 hipsPos = hipsMap.Game.position + up * hipLift;
             transform.position = hipsPos - transform.rotation * (hipsRestInRoot * scale);
 
@@ -346,6 +407,12 @@ namespace PeakVRoid.Avatar
             var low = up.Lower;
             Vector3 a = up.Vrm.position;
             Vector3 target = up.GameEnd.position;
+            if (up.IsLeg)
+            {
+                // Put the foot under the avatar's own hip joint rather than the scout's (much wider) one,
+                // keeping the scout's foot height so it still stands on the ground.
+                target += Vector3.ProjectOnPlane(a - up.Game.position, bodyUp);
+            }
             float l1 = (low.Vrm.position - a).magnitude;
             float l2 = (up.VrmEnd.position - low.Vrm.position).magnitude;
             Vector3 toTarget = target - a;
@@ -355,7 +422,14 @@ namespace PeakVRoid.Avatar
             d = Mathf.Clamp(d, Mathf.Abs(l1 - l2) + 1e-4f, (l1 + l2) * 0.9999f);
 
             // Bend direction: towards the scout's elbow/knee, falling back to the avatar's current bend.
-            Vector3 bend = Vector3.ProjectOnPlane(up.GameMid.position - up.Game.position, dir);
+            Vector3 bend;
+            if (up.IsLeg)
+            {
+                // Knees always bend the way the body faces (the scout's splayed knees made them bow outward).
+                Vector3 fwd = hipsMap.Vrm.rotation * vrmForwardInHips;
+                bend = Vector3.ProjectOnPlane(fwd, dir);
+            }
+            else bend = Vector3.ProjectOnPlane(up.GameMid.position - up.Game.position, dir);
             if (bend.sqrMagnitude < 1e-8f) bend = Vector3.ProjectOnPlane(low.Vrm.position - a, dir);
             if (bend.sqrMagnitude < 1e-8f) bend = Vector3.ProjectOnPlane(up.Vrm.rotation * Vector3.forward, dir);
             bend.Normalize();
