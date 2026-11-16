@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.0.1
+- Installer: no longer crashes when Steam lists a library on a drive that doesn't exist anymore.
+
 ## 1.0.0
 - First release.
 - Load any VRM 0.x or VRM 1.0 avatar (VRoid Studio exports, Booth models, etc.) at runtime, no Unity needed.

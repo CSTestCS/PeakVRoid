@@ -25,6 +25,15 @@ $Here = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 function Say($msg, $color = "White") { Write-Host $msg -ForegroundColor $color }
 
+function Join-Paths([string]$a, [string]$b) {
+    # Plain string join: unlike Join-Path it doesn't fail for drives that don't exist (e.g. an unplugged Steam library).
+    return [System.IO.Path]::Combine($a, $b)
+}
+
+function Test-PathSafe([string]$p) {
+    try { return [bool](Test-Path -LiteralPath $p -ErrorAction Stop) } catch { return $false }
+}
+
 function Get-SteamPath {
     foreach ($key in "HKCU:\Software\Valve\Steam", "HKLM:\SOFTWARE\WOW6432Node\Valve\Steam", "HKLM:\SOFTWARE\Valve\Steam") {
         try {
@@ -43,7 +52,7 @@ function Find-Peak {
     $libraries = @()
     if ($steam) {
         $libraries += $steam
-        $vdf = Join-Path $steam "steamapps\libraryfolders.vdf"
+        $vdf = Join-Paths $steam "steamapps\libraryfolders.vdf"
         if (Test-Path $vdf) {
             foreach ($m in [regex]::Matches((Get-Content $vdf -Raw), '"path"\s+"([^"]+)"')) {
                 $libraries += ($m.Groups[1].Value -replace "\\\\", "\")
@@ -51,14 +60,16 @@ function Find-Peak {
         }
     }
     foreach ($lib in ($libraries | Select-Object -Unique)) {
-        $manifest = Join-Path $lib "steamapps\appmanifest_$PeakAppId.acf"
+        # Skip libraries on drives or folders that aren't there any more.
+        if (-not (Test-PathSafe $lib)) { continue }
+        $manifest = Join-Paths $lib "steamapps\appmanifest_$PeakAppId.acf"
         $dir = $null
-        if (Test-Path $manifest) {
+        if (Test-PathSafe $manifest) {
             $m = [regex]::Match((Get-Content $manifest -Raw), '"installdir"\s+"([^"]+)"')
-            if ($m.Success) { $dir = Join-Path $lib ("steamapps\common\" + $m.Groups[1].Value) }
+            if ($m.Success) { $dir = Join-Paths $lib ("steamapps\common\" + $m.Groups[1].Value) }
         }
-        if (-not $dir) { $dir = Join-Path $lib "steamapps\common\PEAK" }
-        if (Test-Path (Join-Path $dir "PEAK.exe")) { return $dir }
+        if (-not $dir) { $dir = Join-Paths $lib "steamapps\common\PEAK" }
+        if (Test-PathSafe (Join-Paths $dir "PEAK.exe")) { return $dir }
     }
     return $null
 }
@@ -77,7 +88,7 @@ Say "-------------------" Cyan
 
 if (-not $GameDir) { $GameDir = Find-Peak }
 if (-not $GameDir -and -not $NoPrompt) { $GameDir = Pick-Peak }
-if (-not $GameDir -or -not (Test-Path (Join-Path $GameDir "PEAK.exe"))) {
+if (-not $GameDir -or -not (Test-Path (Join-Paths $GameDir "PEAK.exe"))) {
     Say "PEAK was not found. Run again with -GameDir 'C:\path\to\PEAK'." Red
     exit 1
 }
@@ -88,8 +99,8 @@ if (Get-Process -Name "PEAK" -ErrorAction SilentlyContinue) {
     exit 1
 }
 
-$plugins = Join-Path $GameDir "BepInEx\plugins\PeakVRoid"
-$avatars = Join-Path $GameDir "BepInEx\config\PeakVRoid"
+$plugins = Join-Paths $GameDir "BepInEx\plugins\PeakVRoid"
+$avatars = Join-Paths $GameDir "BepInEx\config\PeakVRoid"
 
 # ---------------------------------------------------------------- uninstall
 if ($Uninstall) {
@@ -99,17 +110,17 @@ if ($Uninstall) {
 }
 
 # ---------------------------------------------------------------- BepInEx
-$bepinexCore = Join-Path $GameDir "BepInEx\core\BepInEx.dll"
-if (-not (Test-Path $bepinexCore) -or -not (Test-Path (Join-Path $GameDir "winhttp.dll"))) {
+$bepinexCore = Join-Paths $GameDir "BepInEx\core\BepInEx.dll"
+if (-not (Test-Path $bepinexCore) -or -not (Test-Path (Join-Paths $GameDir "winhttp.dll"))) {
     Say "Installing BepInEx (BepInExPack_PEAK from Thunderstore)..." Cyan
     $info = Invoke-RestMethod -UseBasicParsing "https://thunderstore.io/api/experimental/package/BepInEx/BepInExPack_PEAK/"
     $url = $info.latest.download_url
-    $tmp = Join-Path $env:TEMP ("BepInExPack_PEAK_" + [guid]::NewGuid().ToString("N"))
+    $tmp = Join-Paths $env:TEMP ("BepInExPack_PEAK_" + [guid]::NewGuid().ToString("N"))
     New-Item -ItemType Directory -Path $tmp | Out-Null
-    $zip = Join-Path $tmp "pack.zip"
+    $zip = Join-Paths $tmp "pack.zip"
     Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $zip
     Expand-Archive -Path $zip -DestinationPath $tmp -Force
-    $packRoot = Join-Path $tmp "BepInExPack_PEAK"
+    $packRoot = Join-Paths $tmp "BepInExPack_PEAK"
     if (-not (Test-Path $packRoot)) { $packRoot = $tmp }
     Get-ChildItem -Path $packRoot -Force | Where-Object { $_.Name -ne "pack.zip" } | ForEach-Object {
         Copy-Item -Path $_.FullName -Destination $GameDir -Recurse -Force
@@ -122,9 +133,9 @@ if (-not (Test-Path $bepinexCore) -or -not (Test-Path (Join-Path $GameDir "winht
 
 # ---------------------------------------------------------------- PeakVRoid
 $dll = @(
-    (Join-Path $Here "PeakVRoid.dll"),
-    (Join-Path $Here "BepInEx\plugins\PeakVRoid\PeakVRoid.dll"),
-    (Join-Path $Here "plugins\PeakVRoid\PeakVRoid.dll")
+    (Join-Paths $Here "PeakVRoid.dll"),
+    (Join-Paths $Here "BepInEx\plugins\PeakVRoid\PeakVRoid.dll"),
+    (Join-Paths $Here "plugins\PeakVRoid\PeakVRoid.dll")
 ) | Where-Object { Test-Path $_ } | Select-Object -First 1
 if (-not $dll) {
     Say "PeakVRoid.dll was not found next to the installer. Extract the whole zip first." Red
@@ -132,7 +143,7 @@ if (-not $dll) {
 }
 New-Item -ItemType Directory -Path $plugins -Force | Out-Null
 Copy-Item -Path $dll -Destination $plugins -Force
-New-Item -ItemType Directory -Path (Join-Path $avatars "players") -Force | Out-Null
+New-Item -ItemType Directory -Path (Join-Paths $avatars "players") -Force | Out-Null
 Say "PeakVRoid installed to $plugins" Green
 
 # ---------------------------------------------------------------- avatar
