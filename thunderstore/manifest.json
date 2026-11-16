@@ -1,6 +1,6 @@
 {
   "name": "PeakVRoid",
-  "version_number": "1.0.3",
+  "version_number": "1.0.4",
   "website_url": "https://github.com/CSTestCS/PeakVRoid",
   "description": "Play PEAK as your own VRM avatar (VRoid, VRM 0.x/1.0) with a proper third-person camera. Hair physics, blinking, IK hands & feet.",
   "dependencies": [

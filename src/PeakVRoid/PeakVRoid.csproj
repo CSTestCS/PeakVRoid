@@ -8,7 +8,7 @@
     <TargetFramework>netstandard2.1</TargetFramework>
     <AssemblyName>PeakVRoid</AssemblyName>
     <RootNamespace>PeakVRoid</RootNamespace>
-    <Version>1.0.3</Version>
+    <Version>1.0.4</Version>
     <LangVersion>latest</LangVersion>
     <Nullable>disable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>

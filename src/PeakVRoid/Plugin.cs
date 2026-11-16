@@ -41,7 +41,12 @@ namespace PeakVRoid
         {
             if (Keys.Down(ModConfig.ToggleAvatarKey.Value)) avatars.ToggleAvatar();
             if (Keys.Down(ModConfig.NextAvatarKey.Value)) avatars.NextAvatar();
-            if (Keys.Down(ModConfig.ReloadKey.Value)) avatars.Reload();
+            if (Keys.Down(ModConfig.ReloadKey.Value))
+            {
+                // Pick up edits made to the .cfg file while the game is running, then rebuild the avatars.
+                Config.Reload();
+                avatars.Reload();
+            }
             ThirdPersonCamera.Update();
             avatars.Update();
         }

@@ -35,7 +35,7 @@ Then put your avatar into **`BepInEx/config/PeakVRoid/`** (the folder is created
 | F5 | Toggle first / third person |
 | PageUp / PageDown | Zoom the third-person camera |
 | F9 | Swap the shoulder |
-| F6 | Reload avatar files from disk |
+| F6 | Reload settings (.cfg) and avatar files from disk |
 | F7 | Avatar on / off |
 | F8 | Next avatar in the folder |
 

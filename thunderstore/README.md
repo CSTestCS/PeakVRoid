@@ -31,7 +31,7 @@ Climb PEAK as **your own VRM avatar** — and actually see them, with a **third-
 | F5 | First / third person |
 | PageUp / PageDown | Zoom third-person camera |
 | F9 | Swap shoulder |
-| F6 | Reload avatar files |
+| F6 | Reload settings (.cfg) and avatar files |
 | F7 | Avatar on / off |
 | F8 | Next avatar in the folder |
 

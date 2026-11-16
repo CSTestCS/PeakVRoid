@@ -106,7 +106,7 @@ namespace PeakVRoid.Avatar
             foreach (var m in cache.Values) DestroyModel(m);
             cache.Clear();
             failed.Clear();
-            Plugin.Toast("Reloading avatars…");
+            Plugin.Toast("Reloaded settings and avatars");
         }
 
         public void RemoveAll()

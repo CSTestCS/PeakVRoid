@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.4
+- Fixed avatars coming out smaller than the scout: the scout is now measured through its bones, so MatchHeight really matches.
+- F6 now also reloads the .cfg file, so settings edited while the game runs apply immediately.
+
 ## 1.0.3
 - New `[Avatar] ArmMode`: `ReachScoutHands` (default), `MatchShoulders` (arms closer to the body) or `CopyRotation` (no arm IK). Can be changed while playing.
 - The backpack you wear is now shown on the avatar's back, and your own backpack is visible in third person.

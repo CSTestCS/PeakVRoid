@@ -178,7 +178,20 @@ namespace PeakVRoid.Avatar
 
             // Scale.
             var gHipRestPos = GPos("Hip");
+            // Mesh units → metres. A skinned mesh is drawn through its bones, so the real scale is
+            // bone.localToWorld * bindpose (the renderer object's own scale doesn't matter and can be wrong,
+            // e.g. when the armature is scaled).
             float gameScale = scoutMain.transform.lossyScale.y;
+            {
+                int hi;
+                var hipT = parts["Hip"];
+                if ((bindIndex.TryGetValue(hipT, out hi) || byName.TryGetValue(hipT.name, out hi)) && hi < bindposes.Length && smrBones[hi] != null)
+                {
+                    var m = smrBones[hi].localToWorldMatrix * bindposes[hi];
+                    float s = (((Vector3)m.GetColumn(0)).magnitude + ((Vector3)m.GetColumn(1)).magnitude + ((Vector3)m.GetColumn(2)).magnitude) / 3f;
+                    if (s > 1e-5f) gameScale = s;
+                }
+            }
             Vector3 gUpN = gUp.normalized;
             float gameLeg = FootDrop(parts, gHipRestPos, gUpN, GPos) * gameScale;
             // Full visible height (soles to top of head) of both characters, measured from their meshes in the rest pose.
