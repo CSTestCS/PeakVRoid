@@ -88,6 +88,9 @@ namespace PeakVRoid.Avatar
         private Transform vrmBack, vrmArmL, vrmArmR;
         private bool backpackMoved;
         private float nextBackpackScan;
+        private float attachTime;
+        private float targetHeight;
+        private bool sizeLogged;
 
         private static readonly HashSet<AvatarDriver> Live = new HashSet<AvatarDriver>();
         private static bool renderHooked;
@@ -195,12 +198,30 @@ namespace PeakVRoid.Avatar
             Vector3 gUpN = gUp.normalized;
             float gameLeg = FootDrop(parts, gHipRestPos, gUpN, GPos) * gameScale;
             // Full visible height (soles to top of head) of both characters, measured from their meshes in the rest pose.
-            float gameHeight = ScoutHeight(gUpN) * gameScale;
+            float gameBindHeight = ScoutHeight(gUpN) * gameScale;
+            // What the scout really measures on screen right now (world bounds of its skinned mesh), used when
+            // it is standing upright; this is what "same height as the scout" means to a player.
+            float gameLiveHeight = 0f;
+            GameRest(parts["Hip"], out var hipRestRot, out _);
+            Vector3 liveUp = parts["Hip"].rotation * (Quaternion.Inverse(hipRestRot) * gUpN);
+            if (scoutMain.enabled && Vector3.Dot(liveUp, Vector3.up) > 0.9f)
+            {
+                gameLiveHeight = scoutMain.bounds.size.y;
+                // Leg length in the world too, so the hips are lifted by the right amount.
+                float sum = 0; int n = 0;
+                foreach (var f in new[] { "Foot_L", "Foot_R" })
+                    if (parts.TryGetValue(f, out var ft)) { sum += parts["Hip"].position.y - ft.position.y; n++; }
+                if (n > 0 && sum / n > 0.05f) gameLeg = sum / n;
+            }
+            float gameHeight = gameLiveHeight > 0.3f ? gameLiveHeight : gameBindHeight;
             if (gameHeight < 0.05f)
                 gameHeight = parts.ContainsKey("Head") ? Vector3.Dot(GPos("Head") - gHipRestPos, gUpN) * gameScale + gameLeg : gameLeg * 2f;
             Vector3 vUpN = vUp.normalized;
             float vrmLeg = VrmFootDrop(V, VPos, VPos(vHips), vUpN);
-            float vrmHeight = VrmHeight(vUpN);
+            float vrmBoundsHeight = VrmBoundsHeight(vUpN);
+            float vrmHeight = VrmHeight(vUpN, V("head"), V("leftUpperLeg"), V("rightUpperLeg"));
+            Plugin.Log.LogInfo($"Size: scout bind {gameBindHeight:0.00} m, on screen {gameLiveHeight:0.00} m (scale {gameScale:0.###}); " +
+                               $"VRM body {vrmHeight:0.00}, all meshes {vrmBoundsHeight:0.00}; legs scout {gameLeg:0.00} m, VRM {vrmLeg:0.00}");
             if (vrmHeight < 0.05f)
                 vrmHeight = vHead != null ? Vector3.Dot(VPos(vHead) - VPos(vHips), vUpN) + vrmLeg : vrmLeg * 2f;
             switch (ModConfig.Scale.Value)
@@ -288,6 +309,8 @@ namespace PeakVRoid.Avatar
 
             transform.localScale = Vector3.one * scale;
             gameObject.SetActive(true);
+            attachTime = Time.unscaledTime;
+            targetHeight = gameHeight * ModConfig.AvatarScale.Value;
             Ready = true;
             Plugin.Log.LogInfo($"Avatar '{Model.Title}' attached to {Peak.CharacterName(Character)}: {maps.Count} bones, " +
                                $"{springs.Count} spring joints, scale {scale:0.00} (scout {gameHeight:0.00} m tall, VRM {vrmHeight:0.00} m tall)");
@@ -302,8 +325,53 @@ namespace PeakVRoid.Avatar
             return Extent(mesh.bounds, up, Matrix4x4.identity, out _, out _);
         }
 
-        /// <summary>Height of the VRM's meshes along its up axis, in model units (rest pose).</summary>
-        private float VrmHeight(Vector3 up)
+        /// <summary>
+        /// Height of the avatar along its up axis (model units, rest pose): from the lowest vertex driven by a
+        /// leg to the highest vertex driven by the head. Vertices are placed through their own bones, so the
+        /// result doesn't depend on how the file stores meshes, and stray objects (props, ground planes,
+        /// hidden helpers) can't inflate it.
+        /// </summary>
+        private float VrmHeight(Vector3 up, Transform headBone, Transform legL, Transform legR)
+        {
+            float top = float.MinValue, bottom = float.MaxValue;
+            var toRoot = transform.worldToLocalMatrix;
+            foreach (var r in ownRenderers)
+            {
+                if (!(r is SkinnedMeshRenderer smr) || smr.sharedMesh == null) continue;
+                var mesh = smr.sharedMesh;
+                var bones = smr.bones;
+                if (bones == null || bones.Length == 0 || !mesh.isReadable) continue;
+                var bind = mesh.bindposes;
+                var verts = mesh.vertices;
+                var weights = mesh.boneWeights;
+                if (weights.Length != verts.Length) continue;
+
+                // Per bone: where it is (head / leg / other) and its rest skinning matrix.
+                var kind = new int[bones.Length];
+                var mats = new Matrix4x4[bones.Length];
+                for (int b = 0; b < bones.Length; b++)
+                {
+                    var bt = bones[b];
+                    if (bt == null || b >= bind.Length) { kind[b] = -1; continue; }
+                    mats[b] = toRoot * bt.localToWorldMatrix * bind[b];
+                    if (headBone != null && bt.IsChildOf(headBone)) kind[b] = 1;
+                    else if ((legL != null && bt.IsChildOf(legL)) || (legR != null && bt.IsChildOf(legR))) kind[b] = 2;
+                }
+                for (int v = 0; v < verts.Length; v++)
+                {
+                    int b = weights[v].boneIndex0;
+                    if (b < 0 || b >= bones.Length || kind[b] <= 0) continue;
+                    float h = Vector3.Dot(mats[b].MultiplyPoint3x4(verts[v]), up);
+                    if (kind[b] == 1) top = Mathf.Max(top, h);
+                    else bottom = Mathf.Min(bottom, h);
+                }
+            }
+            if (top > bottom && top - bottom > 0.05f) return top - bottom;
+            return VrmBoundsHeight(up);
+        }
+
+        /// <summary>Fallback: height of all of the VRM's mesh bounds.</summary>
+        private float VrmBoundsHeight(Vector3 up)
         {
             float lo = float.MaxValue, hi = float.MinValue;
             var toRoot = transform.worldToLocalMatrix;
@@ -390,6 +458,18 @@ namespace PeakVRoid.Avatar
             }
 
             if (Time.unscaledTime >= nextBackpackScan) FindBackpack(false);
+            if (!sizeLogged && Time.unscaledTime > attachTime + 1.5f && visible && ThirdPersonCamera.Active)
+            {
+                sizeLogged = true;
+                bool any = false;
+                Bounds b = default;
+                foreach (var r in ownRenderers)
+                {
+                    if (r == null || !r.enabled || r.forceRenderingOff) continue;
+                    if (!any) { b = r.bounds; any = true; } else b.Encapsulate(r.bounds);
+                }
+                if (any) Plugin.Log.LogInfo($"On screen: avatar is {b.size.y:0.00} m tall (target {targetHeight:0.00} m)");
+            }
             HideScout(true);
             Apply();
         }

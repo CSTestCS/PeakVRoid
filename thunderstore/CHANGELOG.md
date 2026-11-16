@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.5
+- Height matching measures the avatar from the vertices attached to its head and legs (stray meshes no longer inflate it) and the scout from its on-screen size; the hip lift uses the scout's real leg length.
+- Log lines with all measurements and the avatar's final on-screen height.
+- Backpack patch finds the handler's fields by type, for newer game versions.
+
 ## 1.0.4
 - Fixed avatars coming out smaller than the scout: the scout is now measured through its bones, so MatchHeight really matches.
 - F6 now also reloads the .cfg file, so settings edited while the game runs apply immediately.
